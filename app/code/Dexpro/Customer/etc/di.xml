@@ -12,5 +12,19 @@
             </argument>
         </arguments>
     </type>
-</config>
 
+    <type name="Dexpro\Customer\Logger\Handler">
+        <arguments>
+            <argument name="filesystem" xsi:type="object">Magento\Framework\Filesystem\Driver\File</argument>
+        </arguments>
+    </type>
+
+    <type name="Dexpro\Customer\Logger\Logger">
+        <arguments>
+            <argument name="name" xsi:type="string">ERPSalesLog</argument>
+            <argument name="handlers"  xsi:type="array">
+                <item name="system" xsi:type="object">Dexpro\Customer\Logger\Handler</item>
+            </argument>
+        </arguments>
+    </type>
+</config>

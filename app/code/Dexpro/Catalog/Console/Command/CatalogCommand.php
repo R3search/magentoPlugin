@@ -39,6 +39,7 @@ class CatalogCommand extends \Symfony\Component\Console\Command\Command
     )
     {
         $storeScope = \Magento\Store\Model\ScopeInterface::SCOPE_STORES;
+
         $moduleEnabled = $this->_scopeConfig->getValue("dexpro_configuration/general/enable", $storeScope);
         if ($moduleEnabled === '1') {
             $userName = $this->_scopeConfig->getValue("dexpro_configuration/general/erp_username", $storeScope);
@@ -80,6 +81,7 @@ class CatalogCommand extends \Symfony\Component\Console\Command\Command
             $periodHour = (int)$periodHour;
             $vars = explode(':',date('H:i'));
             $period = (int)$vars[0];
+
             if ($period % $periodHour == 0) {
                 $this->updateCategoryInfo($authCode);
                 $this->updateProductInfo($authCode);
@@ -89,6 +91,7 @@ class CatalogCommand extends \Symfony\Component\Console\Command\Command
     }
 
     public function updateProductInfo($authCode) {
+
         $this->_logger->info('Product Update is started.');
         $state = $this->objectManager->get('Magento\Framework\App\State');
         $state->setAreaCode('adminhtml');
@@ -114,17 +117,39 @@ class CatalogCommand extends \Symfony\Component\Console\Command\Command
 
             if(count($_productCollection)>0){
                 $_product = $_productCollection->getFirstItem();
+                $_product = $this->objectManager->create('Magento\Catalog\Model\Product')->load($_product->getId());
             } else {
                 $_product = $this->objectManager->create('\Magento\Catalog\Model\Product');
                 $_product->setWebsiteIds(array(1))
                     ->setAttributeSetId(4)
                     ->setSku($sku)
                     ->setTypeId('simple');
+                if ($array['productImageURL'] !== '') {
+                    $imageKeyArray = explode("/", $array['productImageURL']);
+                    $imageId = $imageKeyArray[3];
+                    if ($imageId !== '') {
+                        $imageUrl = $this->erp_url."/api/core/jobdocuments/" . $imageId . "/download";
+                        $imageData = curl_init($imageUrl);
+                        curl_setopt($imageData, CURLOPT_USERPWD, $authCode);
+                        curl_setopt($imageData, CURLOPT_RETURNTRANSFER, true);
+                        curl_setopt($imageData, CURLOPT_TIMEOUT, 10);
+                        curl_setopt($imageData, CURLOPT_CUSTOMREQUEST, 'GET');
+                        curl_setopt($imageData, CURLOPT_HTTPGET, 1);
+                        curl_setopt($imageData, CURLOPT_SSL_VERIFYPEER, false);
+                        $imageBinaryData = curl_exec($imageData);
+                        $fileName = $array['code'].'.jpg';
+                        $imageFile = 'pub/media/import/'.$fileName;
+                        file_put_contents($imageFile, $imageBinaryData);
+                        $imageFile = $this->directory_list->getPath('media').'/import/'.$fileName;
+                        $_product->addImageToMediaGallery($imageFile, array('image', 'small_image', 'thumbnail'), false, false);
+                    }
+                }
             }
+
             $_product->setDescription($array['outputName']);
             $_product->setShortDescription($array['outputName']);
             $_product->setName($array['name']);
-            $_product->setPrice($array['salesPriceIncludingTax']);
+            $_product->setPrice($array['salesPrice']);
             $_product->setWeight(1);
             $this->setAttributeForProduct($_product, 'hs_code', $array['HSCode']);
             $this->setAttributeForProduct($_product, 'scientific_name', $array['scientificName']);
@@ -147,26 +172,56 @@ class CatalogCommand extends \Symfony\Component\Console\Command\Command
             }
             $_product->setCategoryIds($_productCategoryIds);
 
-            if ($array['productImageURL'] !== '') {
-                $imageKeyArray = explode("/", $array['productImageURL']);
-                $imageId = $imageKeyArray[3];
-                if ($imageId !== '') {
-                    $imageUrl = $this->erp_url."/api/core/jobdocuments/" . $imageId . "/download";
-                    $imageData = curl_init($imageUrl);
-                    curl_setopt($imageData, CURLOPT_USERPWD, $authCode);
-                    curl_setopt($imageData, CURLOPT_RETURNTRANSFER, true);
-                    curl_setopt($imageData, CURLOPT_TIMEOUT, 10);
-                    curl_setopt($imageData, CURLOPT_CUSTOMREQUEST, 'GET');
-                    curl_setopt($imageData, CURLOPT_HTTPGET, 1);
-                    curl_setopt($imageData, CURLOPT_SSL_VERIFYPEER, false);
-                    $imageBinaryData = curl_exec($imageData);
-                    $fileName = $array['code'].'.jpg';
-                    $imageFile = 'pub/media/import/'.$fileName;
-                    file_put_contents($imageFile, $imageBinaryData);
-                    $imageFile = $this->directory_list->getPath('media').'/import/'.$fileName;
-                    $_product->addImageToMediaGallery($imageFile, array('image', 'small_image', 'thumbnail'), false, false);
+
+            //Create Sales Pricing Group
+
+            $product_id = $array['id'];
+            $tierPrices = array();
+
+            $url = $this->erp_url.'/api/warehouse/product/'.$product_id.'/salespricinggroupproducts';
+
+            $curl = curl_init();
+            curl_setopt($curl, CURLOPT_HTTPAUTH, CURLAUTH_BASIC);
+            curl_setopt($curl, CURLOPT_USERPWD, $authCode);
+
+            curl_setopt($curl, CURLOPT_URL, $url);
+            curl_setopt($curl, CURLOPT_RETURNTRANSFER, 1);
+            $result = curl_exec($curl);
+            $result = json_decode($result);
+
+            curl_close($curl);
+
+            foreach ($result as $rowData) {
+                $array = json_decode(json_encode($rowData), true);
+                if (isset($array['salesPricingGroup'])) {
+                    //Create Customer Group if not exists
+                    $salesPricingGroupInfo = $array['salesPricingGroup'];
+
+                    $groupId = $this->getCustomerGroupByCode($salesPricingGroupInfo['code']);
+
+                    if ($groupId == -1) {
+
+                        $group = $this->objectManager->create('Magento\Customer\Model\Group');
+
+                        $group->setCode($salesPricingGroupInfo['code'])
+                            ->setTaxClassId(3) // magic numbers OK, core installers do it?!
+                            ->save();
+                        $groupId = $group->getId();
+
+                    }
+
+                    $tier_qty = $array['quantity'];
+                    $tierPrices[] = array(
+                        'website_id'  => 0,
+                        'cust_group'  => intval($groupId),
+                        'price_qty'   => $tier_qty == '0' ? 1 : intval($tier_qty),
+                        'price'       => floatval($array['salesPrice'])
+                    );
                 }
+
             }
+
+            $_product->setTierPrice($tierPrices);
 
             try {
                 $_product->save();
@@ -342,5 +397,18 @@ class CatalogCommand extends \Symfony\Component\Console\Command\Command
         }catch(\Magento\Framework\Exception\NoSuchEntityException $e) {
             echo("Attribute not exist! : ". $attribute_code. "\n");
         }
+    }
+
+    public function getCustomerGroupByCode($code) {
+        $customerGroupCollection = $this->objectManager->get('\Magento\Customer\Model\ResourceModel\Group\Collection');
+        foreach($customerGroupCollection as $group) {
+            $groupId = $group->getId();
+            $groupRepository  = $this->objectManager->create('\Magento\Customer\Api\GroupRepositoryInterface');
+            $groupData = $groupRepository->getById($groupId);
+            if ($groupData->getCode() === $code) {
+                return $groupId;
+            }
+        }
+        return -1;
     }
 }
