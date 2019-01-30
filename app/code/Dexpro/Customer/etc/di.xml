@@ -6,24 +6,24 @@
     <type name="Magento\Framework\Console\CommandList">
         <arguments>
             <argument name="commands" xsi:type="array">
-                <item name="foggyDi" xsi:type="object">
-                    Dexpro\Catalog\Console\Command\CatalogCommand
+                <item name="foggyDiC" xsi:type="object">
+                    Dexpro\Customer\Console\Command\CustomerCommand
                 </item>
             </argument>
         </arguments>
     </type>
 
-    <type name="Dexpro\Catalog\Logger\Handler">
+    <type name="Dexpro\Customer\Logger\Handler">
         <arguments>
             <argument name="filesystem" xsi:type="object">Magento\Framework\Filesystem\Driver\File</argument>
         </arguments>
     </type>
 
-    <type name="Dexpro\Catalog\Logger\Logger">
+    <type name="Dexpro\Customer\Logger\Logger">
         <arguments>
-            <argument name="name" xsi:type="string">ERPLog</argument>
+            <argument name="name" xsi:type="string">ERPSalesLog</argument>
             <argument name="handlers"  xsi:type="array">
-                <item name="system" xsi:type="object">Dexpro\Catalog\Logger\Handler</item>
+                <item name="system" xsi:type="object">Dexpro\Customer\Logger\Handler</item>
             </argument>
         </arguments>
     </type>
