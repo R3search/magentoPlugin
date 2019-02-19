@@ -96,7 +96,7 @@ class CatalogCommand extends \Symfony\Component\Console\Command\Command
         $state = $this->objectManager->get('Magento\Framework\App\State');
         $state->setAreaCode('adminhtml');
         //Get Json String from API
-        $url = $this->erp_url.'/api/warehouse/product?context[]=list_products&context[]=show_product';
+        $url = $this->erp_url.'/api/warehouse/product?context[]=list_products&context[]=show_product&search=webProduct';
         $curl = curl_init();
         curl_setopt($curl, CURLOPT_HTTPAUTH, CURLAUTH_BASIC);
         curl_setopt($curl, CURLOPT_USERPWD, $authCode);
